@@ -1,0 +1,79 @@
+---
+title: "Figure2"
+author: "Caitie"
+date: "2022-12-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse) #new format for R to neaten data ("pipe" = %>%)
+library(ggplot2) #plotting
+library(data.table) #fread function -> reading function for large datasets
+library(countrycode) #ISO3 country codes
+library(here) #best practice for setting working directory to GitHub
+library(tmap)
+library(ggrepel)
+library(RColorBrewer)
+#devtools::install_github("dill/beyonce")
+library(beyonce)
+library(patchwork)
+
+#create/attach colour palettes
+myPalette <- brewer.pal(3, "Set2") 
+
+# devtools::install_github("dill/beyonce")
+# install.packages("devtools")
+# install.packages("ggrepel")
+
+#remove scientific notation
+options(scipen=999)
+
+```
+
+# Figure 2
+
+```{r}
+#attach world spatial data frame
+data("World") 
+
+# # volume of global exports per country over the time period
+# sumtrade_data<-global_dat %>% 
+#   select(ExportISO3, Tonnage) 
+# 
+# sumtrade_data<-sumtrade_data %>% 
+#   group_by(ExportISO3)%>% 
+#   summarise(Tonnage = sum(Tonnage, na.rm = TRUE)) %>% 
+#   ungroup()
+
+# volume of two-way trade exported per country over the time period
+country_data<-read.csv(here("output_data/Total_redundant_trade_by_exportISO3.csv"))
+
+# combine world spatial data and tonnage traded -> set countries with no value (i.e. no exports) = 0 tonnes ||||| and create figure based on countries and tonnage traded (save image)
+World_dat <- World %>% 
+  rename(ExportISO3 = iso_a3) %>% 
+  filter(!ExportISO3 == "ATA")
+
+pal <- brewer.pal(100, "YlGnBu")
+
+#create map of redundant seafood exports per country
+# Worldtrade <- left_join(World_dat, sumtrade_data, by = "ExportISO3", na.rm = TRUE)
+Worldredun <- left_join(World_dat, country_data, by = "ExportISO3") %>% 
+  mutate(redun_thous_tonnes = Redun_tonnes/1000)
+```
+
+```{r}
+redun_map<-tm_shape(Worldredun) +
+  tm_polygons("redun_thous_tonnes", style = "cont", title="Redundant trade\n(thousand tonnes)", palette = pal, textNA="No redundant trade") + 
+  tm_layout(frame = FALSE)
+
+redun_map
+
+```
+
+```{r}
+tmap_save(redun_map, here("figures/Figure2a_Redun_trade_map.png"), width=2920, height=2080, asp=0, dpi = 600)
+```

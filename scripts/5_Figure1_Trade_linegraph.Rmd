@@ -1,0 +1,113 @@
+---
+title: "Figure1"
+author: "Caitie"
+date: "2022-12-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse) #new format for R to neaten data ("pipe" = %>%)
+library(ggplot2) #plotting
+library(data.table) #fread function -> reading function for large datasets
+library(countrycode) #ISO3 country codes
+library(here) #best practice for setting working directory to GitHub
+library(tmap)
+library(ggrepel)
+library(RColorBrewer)
+#devtools::install_github("dill/beyonce")
+library(beyonce)
+library(patchwork)
+library(viridis)
+
+#create/attach colour palettes
+myPalette <- brewer.pal(3, "Set2") 
+
+# devtools::install_github("dill/beyonce")
+# install.packages("devtools")
+# install.packages("ggrepel")
+
+#remove scientific notation
+options(scipen=999)
+```
+
+# Figure 1
+
+```{r}
+yearly_trade<-read.csv(here("output_data/yearly_trade_results.csv"))
+```
+
+
+Volume of global wild-caught seafood trade through time. Also shown is trade identified to species level, twoway trade and redundant trade.
+```{r, echo = F}
+#create data frame for line graph
+line_graph <- yearly_trade %>% 
+  rename(Global = global_trade, 
+         Species = species_trade, 
+         Twoway = total_like, 
+         Redundant = total_redundant) %>% 
+  pivot_longer(cols = c("Global", "Species", "Twoway", "Redundant"), names_to = "type", values_to = "trade") #this changes the data frame format from wide to long (columns to rows)
+
+#order the variables for the legend
+line_graph$type <- factor(line_graph$type, levels = c("Global", "Species", "Twoway", "Redundant"))
+
+#plot the line graph
+ggplot(data = line_graph, aes(x = year, y = trade/1000000)) +
+  geom_line(aes(color = type)) +
+  scale_colour_viridis_d(labels = c("Total", "Species", "Two-way", "Redundant")) +
+  ylab("Wild caught seafood trade (Mt)") +
+  xlab("Year") +
+  theme_bw() +
+  labs(colour=" ") +
+  theme(legend.position = "bottom") +
+  scale_x_continuous(limits = c(2000,2015), expand = c(0,0)) +
+  scale_y_continuous(limits = c(0,20), expand = c(0,0)) +
+  theme(plot.margin = margin(1,1,1.5,1.2, "cm"))
+  #xlim(c(2000,2015))
+
+```
+
+```{r}
+ggsave(here("figures/Figure1_Trade_LineGraph.png"), width = 5, height = 4, dpi = 600)
+```
+
+
+# Same graph with Two-way removed
+
+```{r, echo = F}
+#create data frame for line graph
+line_graph2 <- yearly_trade %>% 
+  dplyr::select(-total_like) %>% 
+  rename(Global = global_trade, 
+         Species = species_trade, 
+        # Twoway = total_like, 
+         Redundant = total_redundant) %>% 
+  pivot_longer(cols = c("Global", "Species", "Redundant"), names_to = "type", values_to = "trade") #this changes the data frame format from wide to long (columns to rows)
+
+#order the variables for the legend
+line_graph2$type <- factor(line_graph2$type, levels = c("Global", "Species", "Redundant"))
+
+#plot the line graph
+ggplot(data = line_graph2, aes(x = year, y = trade/1000000)) +
+  geom_line(aes(linetype = type)) +
+  #scale_colour_viridis_d(labels = c("Total", "Species", "Redundant")) +
+  scale_linetype_manual(values=c("solid", "twodash", "dotted"), labels = c("Total", "Species", "Redundant"))+
+  ylab("Wild caught seafood trade (Mt)") +
+  xlab("Year") +
+  theme_bw() +
+  labs(linetype=" ") +
+  theme(legend.position = "bottom") +
+  scale_x_continuous(limits = c(2000,2015), expand = c(0,0)) +
+  scale_y_continuous(limits = c(0,20), expand = c(0,0)) +
+  theme(plot.margin = margin(1,1,1.5,1.2, "cm"))
+  #xlim(c(2000,2015))
+
+```
+
+```{r}
+ggsave(here("figures/Figure1_Trade_LineGraph_no_two_way.png"), width = 5, height = 4, dpi = 600)
+```

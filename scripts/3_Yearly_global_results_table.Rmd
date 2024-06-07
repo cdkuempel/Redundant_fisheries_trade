@@ -1,0 +1,61 @@
+---
+title: "Result_tables"
+author: "Caitie"
+date: "2022-12-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(here)
+```
+
+# Load data
+
+```{r, echo = F}
+# trade_dat<-read.csv(paste0(dir, "/like_traded_year_calculations.csv"))
+trade_data<-read.csv(here("output_data/Trade_data_clean_all.csv"))
+trade_data_spp<-read.csv(here("output_data/Trade_data_clean_speciesonly.csv"))
+#global_dat<-read.csv(paste0(here("raw_data/LeslieAlltrade2000.csv")))
+like_trade_dat<-read.csv(paste0(here("output_data/like_traded_year_calculations_july2022.csv")))
+like_sp<-do.call(rbind, lapply(list.files(here("output_data/Country_Country/"), full.names = T), read.csv))
+species_list<-fread(here("output_data/species_list.csv"))
+```
+
+# Global overview table
+
+```{r, echo = F}
+#Global trade of wild-caught seafood in each year
+glob_trade<-trade_data %>% 
+  rename(year = Year) %>% 
+  group_by(year) %>% 
+  summarise(global_trade = sum(Tonnage, na.rm = T)) #%>% 
+  # pivot_longer(cols = c("global_trade"), names_to = "type", values_to = "trade")
+
+# create new data 'clean' dataset to only include observations used in this analysis (i.e. not identified to species level and not including re-exports)
+glob_clean<-trade_data_spp %>% 
+  rename(year = Year,
+         species_trade = Tonnage) %>% 
+  group_by(year) %>% 
+  summarise(species_trade = sum(species_trade, na.rm = T)) #%>% 
+  # pivot_longer(cols = c("species_trade"), names_to = "type", values_to = "trade")
+
+#Two-way trade and redundant trade in each year
+two_way_trade<-like_trade_dat %>% 
+  rename(year = Year) %>% 
+  group_by(year) %>% 
+  summarise(total_like = sum(total_traded_like_spp_year, na.rm = T),
+            total_redundant = sum(total_traded_redun_spp_year, na.rm = T))# %>% 
+  # pivot_longer(cols = c("total_like", "total_redundant"), names_to = "type", values_to = "trade") #this changes the data frame format from wide to long (columns to rows)
+
+#combine datasets
+yearly_trade <- full_join(two_way_trade, glob_clean) %>% 
+  full_join(., glob_trade)
+
+write.csv(yearly_trade, here("output_data/yearly_trade_results.csv"))
+```
+

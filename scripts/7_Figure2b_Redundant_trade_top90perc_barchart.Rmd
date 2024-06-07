@@ -1,0 +1,189 @@
+---
+title: "Figure2b"
+author: "Caitie"
+date: "2022-12-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse) #new format for R to neaten data ("pipe" = %>%)
+library(ggplot2) #plotting
+library(data.table) #fread function -> reading function for large datasets
+library(countrycode) #ISO3 country codes
+library(here) #best practice for setting working directory to GitHub
+library(tmap)
+library(ggrepel)
+library(RColorBrewer)
+#devtools::install_github("dill/beyonce")
+library(beyonce)
+library(patchwork)
+library(ggpmisc)
+library(ggpubr)
+
+#create/attach colour palettes
+myPalette <- brewer.pal(3, "Set2") 
+
+# devtools::install_github("dill/beyonce")
+# install.packages("devtools")
+# install.packages("ggrepel")
+
+#remove scientific notation
+options(scipen=0)
+
+```
+
+# Data
+
+```{r}
+like_sp<-read.csv(here("output_data/Total_redundant_trade_by_exportISO3.csv")) %>% 
+  mutate(Country = countrycode(ExportISO3, "iso3c", "country.name"))
+trade_data<-read.csv(here("output_data/Trade_data_clean_all.csv"))
+data("World") 
+World_dat <- World %>% 
+  rename(ExportISO3 = iso_a3) %>% 
+  filter(!ExportISO3 == "ATA")
+```
+
+
+```{r, echo = F}
+exp_tonnes <- trade_data %>% 
+  group_by(ExportISO3) %>% 
+  summarise(Global_Exp = sum(Tonnage, na.rm = T)) %>% 
+  ungroup()
+
+
+#combine world data, global trade data, and two-way trade data
+cont<-read.csv(paste0(here("raw_data/Countries_by_continent.csv")))
+
+sub_World_dat<-World_dat %>% 
+  dplyr::select(ExportISO3, name)
+
+region_dat <- full_join(sub_World_dat, like_sp, by = "ExportISO3", na.rm = TRUE)
+region_dat <- left_join(region_dat, exp_tonnes, by = "ExportISO3", na.rm = TRUE)
+region_dat <- left_join(region_dat, cont, by = c("ExportISO3" = "ISO3"), na.rm = TRUE)
+
+
+region_dat <- region_dat %>% 
+  rename(ExportCountry = ExportISO3,
+         Like_tonnes = Export_tonnes) %>% 
+  select(ExportCountry, Continent, n_redun_spp, Global_Exp, Redun_tonnes, Like_tonnes) %>% 
+  mutate(prop_redun1 = Redun_tonnes/Global_Exp,
+         prop_redun2 = Redun_tonnes/Like_tonnes) %>% 
+  as.data.frame()
+
+region_data <- region_dat %>% 
+  filter(!is.na(n_redun_spp) == T)#remove n/a's
+
+region_data <- region_data %>% 
+  mutate(Continent = as.factor(Continent)) #change Continent from chr to Fac for circle graph
+
+like_sp<-like_sp %>% 
+  mutate(Country = countrycode(ExportISO3, "iso3c", "country.name"),
+         label =ifelse(Redun_tonnes>=quantile(like_sp$Redun_tonnes)[[4]], Country, NA))
+```
+
+Number of speices 
+
+```{r}
+spp_dat<-read.csv(here("output_data/Country_redundant_species_results.csv"))
+
+c1<-unique(spp_dat$c1)
+c2<-unique(spp_dat$c2)
+
+ct<-unique(c(c1, c2))
+
+done2<-c()
+
+for(i in 1:length(ct)){
+  sub1<-spp_dat %>% 
+    filter(c1 == ct[[i]])
+  
+  sub2<-spp_dat %>% 
+    filter(c2 == ct[[i]])
+  
+  spp1<-unique(sub1$TaxonName)
+  spp2<-unique(sub2$TaxonName)
+  all<-c(spp1, spp2)
+  n_spp<-length(unique(all))
+  
+  done<-data.frame(country = ct[[i]], n_spp = n_spp)
+  
+  done2<-rbind(done2, done)
+}
+
+write.csv(done2, here("output_data/Number_of_species_traded_by_country.csv"))
+```
+
+```{r}
+like_sp<-like_sp %>% 
+  dplyr::select(-n_redun_spp) %>% 
+  left_join(., done2, by = c("ExportISO3" = "country"))
+```
+
+```{r}
+write.csv(like_sp, here("output_data/Total_redundant_trade_by_exportISO3.csv"))
+```
+
+
+# Figure 2b
+
+```{r}
+ggplot(like_sp, aes(x = Export_tonnes/1000000, y = Redun_tonnes/1000000, color = prop_total_trade,label = label)) +
+  geom_point(aes(size = n_spp)) +
+   geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x) +
+        geom_point()+
+        stat_cor()+ #this means at 35th unit in the y axis, the r squared and p value will be shown
+
+  theme_bw() +
+  geom_label_repel(max.overlaps = 100) +
+  xlab("Total trade (Mt)") +
+  ylab("Redundant trade (Mt)") +
+  labs(size = "No. species", 
+       color = "Prop. redundant\ntrade") +
+  scale_color_viridis_c(direction = -1) 
+  
+```
+```{r}
+ggsave(here("figures/Figure2b_Trade_vs_redundant.png"), width = 7, height = 4, dpi = 600)
+```
+
+
+
+```{r}
+quantile(like_sp$Redun_tonnes)
+
+top_countries<-like_sp %>% 
+  filter(Redun_tonnes>=quantile(like_sp$Redun_tonnes)[[4]]) %>% 
+  mutate(ExportCountry = countrycode(ExportISO3, "iso3c", "country.name"))
+
+region_data2<-na.omit(region_data) %>% 
+  as.data.frame() %>% 
+  dplyr::select(-geometry) %>% 
+  mutate(Country = countrycode(ExportCountry, "iso3c", "country.name"),
+         Country = ifelse(Country == "Micronesia (Federated States of)", "Micronesia", Country)) %>% 
+  filter(ExportCountry %in% top_countries$ExportISO3)
+
+ggplot(region_data2, aes(x = reorder(Country, -prop_redun1), y = prop_redun1, fill = n_redun_spp)) +
+  geom_bar(stat = "identity",
+           color = "black") +
+  #facet_wrap(~Continent, scales = "free", nrow = 2) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  #coord_flip() +
+  theme(legend.position = "right",
+        axis.text = element_text(size = 15),
+        axis.title = element_text(size = 20),
+        strip.text.x = element_text(size = 20)) +
+  xlab("") +
+  ylab("Prop. of trade\nthat is redundant") +
+  labs(fill = "No. species") +
+  scale_fill_gradientn(colours = brewer.pal(9, "YlGnBu"))
+```
+
+```{r}
+ggsave(here("figures/Proportion_redun_species_barplot.png"), width = 10, height = 7, dpi = 600)
+```

@@ -1,0 +1,331 @@
+---
+title: "Like_for_like_Analysis"
+author: "Emma"
+date: "11/01/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse) #new format for R to neaten data ("pipe" = %>%)
+library(ggplot2) #plotting
+library(data.table) #fread function -> reading function for large datasets
+library(countrycode) #ISO3 country codes
+library(here) #best practice for setting working directory to GitHub
+library(tmap)
+library(sf)
+```
+
+
+# Attach Data Frames
+```{r}
+like_data<-fread(here("output_data/like_traded_year_calculations_july2022.csv")) # This file has each country combination listed once per year, where the individual country files have trade both ways listed (so AGO --> PRT and PRT --> AGO) In the country files need to be careful to not count redundant trade twice.
+
+#test<-fread(here("output_data/Like_species_all_years_july2022.csv")) # The redundant trade here is different because it is over a 15 year period instead of just in 1 year.
+
+test2<-fread(here("output_data/Country_Country/AGO_PRT_like_species_trade.csv"))
+#head(like_data) #view first few rows "tail" will show last few rows
+#View(like_data) #view complete data file
+```
+
+#Clean trade data
+```{r}
+trade_data<-read.csv(here("output_data/Trade_data_clean_all.csv"))
+
+trade_data_spp<-read.csv(here("output_data/Trade_data_clean_speciesonly.csv"))
+```
+
+# number of countries which participate in like-for-like trade 2000-2015
+```{r}
+CountryX<-unique(like_data$x) %>% 
+  as.data.frame() #create a variable with the list of countries exporting
+CountryY<-unique(like_data$y) %>% 
+  as.data.frame()#create a variable with the list of countries importing
+
+like_country_list<-rbind(CountryX, CountryY) %>% 
+  rename(Country = ".")
+
+like_country_list<-like_country_list %>% 
+  filter(!duplicated(Country))
+nrow(like_country_list)
+length(unique(like_country_list$Country)) # 111 countries participated in two-way trade during 2000-2015
+```
+
+# number of countries which participate in global trade
+```{r}
+GlobalX<-unique(trade_data$ExportISO3) %>% 
+  as.data.frame() #create a variable with the list of countries exporting
+
+GlobalY<-unique(trade_data$ImportISO3) %>% 
+  as.data.frame()#create a variable with the list of countries importing
+
+global_trade_list<-rbind(GlobalX, GlobalY) %>% 
+  rename(Country = ".")
+
+global_trade_list<-global_trade_list %>% 
+  filter(!duplicated(Country))
+
+nrow(global_trade_list) #211 countries participated in trade (importing OR exporting) during 2000-2015
+```
+
+
+### Global seafood trade data tonnage ###
+
+```{r}
+# attach and combine like-for-like data
+like_sp<-do.call(rbind, lapply(list.files(here("output_data/Country_Country/"), pattern = "like_species_trade", full.names = T), read.csv))
+
+#Number of species traded over the total time period
+
+length(unique(like_sp$TaxonName)) #134 (114) species like-for-like traded over the 16 year time period
+sptrade<-unique(trade_data_spp$TaxonName)
+length(sptrade) #272 species total traded over the 16 year time period
+
+# Number of countries
+
+ex<-unique(trade_data_spp$ExportISO3)
+im<-unique(trade_data_spp$ImportISO3) 
+
+j<-length(unique(c(ex,im)))
+j
+
+#length(unique(trade_data_spp$ExportISO3, t))
+```
+
+```{r}
+
+CT<-seq(2000,2015,1) #years 2000-2015, therefore i = [1:16]
+
+#create empty sheets/function/cell for for loop
+global_trade<-c()
+
+#create for loop to analyse species traded in each year
+for(i in 1:length(CT)){
+    trade_data_summary<-trade_data %>% 
+      filter(Year == CT[i]) 
+      sum(trade_data_summary$Tonnage) #tonnes traded globally in year i
+  
+    like_data_summary<-like_data %>% 
+      filter(Year == CT[i]) %>% 
+      as.data.frame()
+
+    # list of species traded like-for-like in 2015:
+    sp_list<-like_sp %>% 
+      select(Year, CommonName, TaxonName, Taxonkey) %>% 
+      filter(Year == CT[i])
+    ls1<-sp_list[!duplicated(sp_list),]
+    
+    global_trade_df<-data.frame(year = CT[i],
+                             Tonnage = sum(trade_data_summary$Tonnage),
+                             like_redun_tonnes = sum(like_data_summary$total_traded_redun_spp_year),
+                             total_like_trade = sum(like_data_summary$total_traded_like_spp_year),
+                             total_country_trade =  sum(like_data_summary$total_traded_x_year) + sum(like_data_summary$total_traded_y_year),
+                             total_country_spps_trade = sum(like_data_summary$total_traded_spp_x_year) + sum(like_data_summary$total_traded_spp_y_year),
+                             total_species = length(unique(trade_data_summary$TaxonName)),
+                             like_species = length(unique(ls1$TaxonName)))
+     global_trade<-rbind(global_trade, global_trade_df)
+  }
+
+write.csv(global_trade, here("output_data/Global_results.csv"))
+
+```
+
+# Country global results
+
+Total exported by country and total identified to species traded by country
+
+```{r}
+CT<-seq(2000,2015,1) #years 2000-2015, therefore i = [1:16]
+
+#create empty sheets/function/cell for for loop
+global_trade_iso3<-trade_data %>% 
+     # filter(ExportISO3 == "AGO")
+      group_by(ExportISO3) %>% 
+      summarise(total_trade = sum(Tonnage, na.rm = T))
+
+#create for loop to analyse species traded in each year
+for(i in 1:length(CT)){
+    trade_data_summary<-trade_data %>% 
+     # filter(ExportISO3 == "AGO")
+      group_by(ExportISO3) %>% 
+      summarise(total_trade = sum(Tonnage, na.rm = T))
+      #sum(trade_data_summary$Tonnage) #tonnes traded globally in year i
+  
+    like_data_summary<-like_data %>% 
+     # filter(x == "AGO")
+      group_by(ExportISO3) %>% 
+      summarise(total_spp_trade = sum(total_traded_spp_x_year, na.rm = T))
+
+    
+    global_trade_df<-data.frame(year = CT[i],
+                             Tonnage = sum(trade_data_summary$Tonnage),
+                             like_redun_tonnes = sum(like_data_summary$total_traded_redun_spp_year),
+                             total_like_trade = sum(like_data_summary$total_traded_like_spp_year),
+                             total_country_trade =  sum(like_data_summary$total_traded_x_year) + sum(like_data_summary$total_traded_y_year),
+                             total_country_spps_trade = sum(like_data_summary$total_traded_spp_x_year) + sum(like_data_summary$total_traded_spp_y_year),
+                             total_species = length(unique(trade_data_summary$TaxonName)),
+                             like_species = length(unique(ls1$TaxonName)))
+     global_trade<-rbind(global_trade, global_trade_df)
+  }
+
+write.csv(global_trade, here("output_data/Global_results.csv"))
+```
+
+
+#create list of like-for-like species and volume of redun_like_tonnes could be potentially eliminated for every year
+used this data to create pie chart
+```{r}
+#remove scientific notation
+options(scipen=999)
+
+sub_trade_data<-like_sp %>% 
+  select(ExportISO3, ImportISO3)      #create data set with only Export and Import Combinations
+
+sub_trade_data2<-unique(sub_trade_data[c("ExportISO3", "ImportISO3")]) 
+
+countrytrade1<-merge(sub_trade_data2,setNames(sub_trade_data2,rev(names(sub_trade_data2)))) #create data frame of countries that both import & export to each other 
+d1<-as.data.frame(t(apply(countrytrade1,1,sort)))
+countrytrade<-countrytrade1[!duplicated(d1),]  
+
+all<-c()
+for(i in 1:nrow(countrytrade)){
+  
+  print(i)
+ c1<-countrytrade$ExportISO3[i]
+ c2<-countrytrade$ImportISO3[i]
+ 
+ sub<-like_sp %>% 
+    filter(ExportISO3 == c1 | ImportISO3 == c1)
+           
+ sub2<-sub %>% 
+    filter(ExportISO3 == c2 | ImportISO3 == c2)
+ 
+ sub3<-sub2 %>% 
+   group_by(Year, TaxonName, CommonName) %>% 
+   summarise(min_tonnes = min(Tonnage, na.rm = T),
+             like_tonnes = sum(Tonnage, na.rm = T)) %>% 
+   mutate(redun_tonnes = min_tonnes *2,
+          c1 = c1,
+          c2 = c2)
+ 
+ all<-rbind(all, sub3)
+}
+
+write.csv(all, here("output_data/Country_redundant_species_results.csv"))
+
+```
+
+```{r}
+# 2013, 2014, 2015
+sub_like_sp_redun<-all %>% 
+  filter(Year %in% c(2013,2014, 2015),
+         CommonName == "Atlantic herring") %>% 
+  group_by(TaxonName, CommonName) %>% 
+  summarise(like_tonnes = sum(like_tonnes, na.rm = T),
+            redun_tonnes = sum(redun_tonnes, na.rm = TRUE)/2) %>% 
+  ungroup()
+
+
+sub_top_sp<-trade_data %>% 
+  filter(Year %in% c(2013,2014, 2015),
+         CommonName == "Atlantic herring") %>% 
+  group_by(TaxonName, CommonName) %>% 
+  summarise(Tonnage = sum(Tonnage, na.rm = TRUE)) %>% 
+  ungroup()
+
+sub_all_sp<-full_join(sub_top_sp, sub_like_sp_redun)
+
+write.csv(sub_all_sp, here("output_data/Redundant_trade_by_species_2013_2015.csv"))
+```
+
+
+```{r}
+# group by species to find greatest redun tonnes by species over the time period
+like_sp_redun<-all %>% 
+  group_by(TaxonName, CommonName) %>% 
+  summarise(like_tonnes = sum(like_tonnes, na.rm = T),
+            redun_tonnes = sum(redun_tonnes, na.rm = TRUE)/2) %>% 
+  ungroup()
+
+
+top_sp<-trade_data %>% 
+  group_by(TaxonName, CommonName) %>% 
+  summarise(Tonnage = sum(Tonnage, na.rm = TRUE)) %>% 
+  ungroup()
+
+all_sp<-full_join(top_sp, like_sp_redun)
+
+write.csv(all_sp, here("output_data/Redundant_trade_by_species.csv"))
+
+#write CSV for each year! (now changed for over the whole time period)
+# write.csv(like_sp_list, paste0(here("output_data/"),"like_species_list_tonnage.csv"))
+
+# group by country combinations to find greatest redun tonne trade combinations
+combination <- like_data %>% 
+  group_by(x, y) %>% 
+  summarise(redun_like_tonnes = sum(total_traded_redun_spp_year, na.rm = TRUE)) %>% 
+  ungroup()
+
+write.csv(combination, here("output_data/Country_redundant_trade_combinations.csv"))
+
+# group by country trade combinations for Atlantic Herring to see who contributes the most (DO THIS!!)
+test<-like_sp %>% 
+  filter(ExportISO3 == "BEL")
+
+spp_year<-like_sp %>% 
+  dplyr::select(Year, ExportISO3, ImportISO3, n_species_spp_like_year) %>% 
+  distinct() %>% 
+  group_by(ExportISO3) %>% 
+  summarise(n_redun_spp = sum(n_species_spp_like_year, na.rm = T))
+
+#group by export country for export tonnage and redundant tonnage
+like_vs_redun <-like_sp %>% 
+  group_by(ExportISO3) %>% 
+  summarise(Export_tonnes = sum(Tonnage, na.rm = TRUE),
+            Redun_tonnes = sum(unique(total_traded_redun_spp_year), na.rm = TRUE)/2) %>% 
+  ungroup() %>% 
+  mutate(prop = Redun_tonnes/Export_tonnes)
+
+like_vs_redun<-full_join(like_vs_redun, spp_year, by = "ExportISO3")
+
+like_vs_redun<-left_join(like_vs_redun, global_trade_iso3, by = "ExportISO3") 
+like_vs_redun<-like_vs_redun %>% 
+  mutate(prop_total_trade = Redun_tonnes/total_trade)
+
+write.csv(like_vs_redun, here("output_data/Total_redundant_trade_by_exportISO3.csv"))
+
+
+global_all_trade<-trade_data %>% 
+      group_by(Year) %>% 
+      summarise(tonnes_trade = sum(Tonnage, na.rm = T)) 
+
+#Global trade identified to species level
+global_sp_trade <- trade_data_spp %>% 
+  group_by(Year) %>% 
+  summarise(tonnes_trade_spp = sum(Tonnage, na.rm = TRUE)) %>% 
+  ungroup()
+
+all_global_trade<-full_join(global_all_trade, global_sp_trade) %>% 
+  mutate(prop = tonnes_trade_spp/tonnes_trade)
+
+```
+
+
+```{r}
+#list of species that were omitted from analysis
+
+omit<-trade_data %>% 
+  select(Taxonkey, TaxonName, CommonName)
+omit1<-omit[!duplicated(omit),]
+
+omit2<- omit1 %>% 
+  filter(!TaxonName %in% trade_data_spp$TaxonName)
+
+write.csv(omit2, here("output_data/omitted_species_groups.csv"))
+
+```
+

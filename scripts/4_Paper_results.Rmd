@@ -1,0 +1,365 @@
+---
+title: "Results_Dec2022"
+author: "Caitie"
+date: "2022-12-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(here)
+library(countrycode)
+```
+
+# Load data
+
+```{r}
+yearly_trade<-read.csv(here("output_data/yearly_trade_results.csv"))
+trade_data<-read.csv(here("output_data/Trade_data_clean_all.csv"))
+trade_data_spp<-read.csv(here("output_data/Trade_data_clean_speciesonly.csv"))
+```
+
+# Results
+ 
+ How much was traded between 2000-2015
+ 
+```{r}
+min(yearly_trade$global_trade, na.rm = T)/1000000
+max(yearly_trade$global_trade, na.rm = T)/1000000
+total_trade<-sum(yearly_trade$global_trade, na.rm = T)/1000000 #Megatonnes
+total_trade
+```
+
+Amount identified to species level
+
+
+```{r}
+min(yearly_trade$species_trade, na.rm = T)/1000000
+max(yearly_trade$species_trade, na.rm = T)/1000000
+spp_trade<-sum(yearly_trade$species_trade, na.rm = T)/1000000 #Megatonnes
+spp_trade
+```
+
+
+
+
+```{r}
+unknown_spp<-yearly_trade %>% 
+  mutate(perc_spp_not_id = 1-(species_trade/global_trade))
+
+min(unknown_spp$perc_spp_not_id)
+max(unknown_spp$perc_spp_not_id)
+
+min(unknown_spp$species_trade, na.rm = T)/1000000
+max(unknown_spp$species_trade, na.rm = T)/1000000
+
+# Total percent unknown spp across the entire time period
+sum(unknown_spp$species_trade)/sum(yearly_trade$global_trade, na.rm = T)
+```
+
+Two-way trade
+```{r}
+min(yearly_trade$total_like, na.rm = T)/1000000
+max(yearly_trade$total_like, na.rm = T)/1000000
+
+like_trade<-yearly_trade %>% 
+  mutate(prop_like = total_like/global_trade,
+         prop_like_spp = total_like/species_trade)
+
+# Of total global trade
+min(like_trade$prop_like, na.rm = T)
+max(like_trade$prop_like, na.rm = T)
+
+# Of trade identified to species
+min(like_trade$prop_like_spp, na.rm = T)
+max(like_trade$prop_like_spp, na.rm = T)
+```
+Redundant two-way trade
+```{r}
+min(yearly_trade$total_redundant, na.rm = T)/1000 # note thousands
+max(yearly_trade$total_redundant, na.rm = T)/1000
+
+redundant_trade<-yearly_trade %>% 
+  mutate(prop_redundant = total_redundant/global_trade,
+         prop_redundant_spp = total_redundant/species_trade)
+
+min(redundant_trade$prop_redundant, na.rm = T)
+max(redundant_trade$prop_redundant, na.rm = T)
+
+mean(yearly_trade$total_redundant, na.rm = T)/1000
+mean(redundant_trade$prop_redundant, na.rm = T)
+```
+
+```{r}
+# percent increase
+
+(562617.3- 392372.5)/392372.5
+```
+
+```{r}
+# trend
+
+mod1<-lm(yearly_trade$total_redundant ~ yearly_trade$year)
+
+mod1
+
+```
+
+```{r}
+sum_global<-sum(yearly_trade$global_trade,na.rm = T)/1000000
+sum_species<-sum(yearly_trade$species_trade, na.rm = T)/1000000
+sum_like<-sum(yearly_trade$total_like,na.rm = T)/1000000
+sum_redundant<-sum(yearly_trade$total_redundant,na.rm = T)/1000000
+
+sum_like/sum_global
+sum_redundant/sum_global
+sum_redundant/sum_species
+```
+
+# Country results
+
+```{r}
+trade_data<-read.csv(here("output_data/Trade_data_clean_all.csv"))
+```
+
+All countries that traded
+```{r}
+exp_iso3<-unique(trade_data$ExportISO3, na.rm = T)
+imp_iso3<-unique(trade_data$ImportISO3, na.rm = T)
+
+all_iso3<-c(exp_iso3, imp_iso3)
+
+length(unique(all_iso3))
+```
+
+```{r}
+redun<-read.csv(here("output_data/Total_redundant_trade_by_exportISO3.csv"))
+```
+
+
+```{r}
+redun<-redun %>% 
+  arrange(desc(Redun_tonnes)) %>% 
+  mutate(cumsum = cumsum(Redun_tonnes)/1000000,
+         prop_cumsum = cumsum/sum_redundant)
+```
+
+```{r}
+cor.test(redun$Export_tonnes, redun$Redun_tonnes, method = "pearson")
+```
+
+```{r}
+redun_50<-redun %>% 
+  filter(prop>=0.5)
+
+redun_100<-redun %>% 
+  filter(prop==1) %>% 
+  mutate(Country = countrycode(ExportISO3, "iso3c", "country.name"))
+
+length(which(redun$prop>=0.5))
+length(which(redun$prop==1))
+
+(sum(redun_100$Redun_tonnes))
+(sum(redun_100$Redun_tonnes)/1000000)/sum_redundant
+```
+
+# Trade partners
+
+```{r}
+partners<-read.csv(here("output_data/Country_redundant_trade_combinations.csv"))
+```
+
+```{r}
+partners<-partners %>% 
+  arrange(desc(redun_like_tonnes)) %>% 
+  mutate(cumsum = cumsum(redun_like_tonnes)/1000000,
+         prop_cumsum = cumsum/sum_redundant,
+         prop = (redun_like_tonnes/1000000)/sum_redundant)
+
+length(which(partners$prop_cumsum<=0.9))
+```
+
+```{r}
+num_partners<-read.csv(here("output_data/Number_Trade_Partners.csv"))
+
+length(which(num_partners$trade_partners == 1))
+```
+
+```{r}
+cont<-read.csv(paste0(here("raw_data/Countries_by_continent.csv"))) %>% 
+  dplyr::select(ISO3, Region1, Continent)
+
+cont_partners<-partners %>% 
+  left_join(., cont, by = c("x" = "ISO3")) %>% 
+  left_join(., cont, by = c("y" = "ISO3"))
+
+cont_partners<-cont_partners %>% 
+  mutate(Continent.y = ifelse(y == "TWN", "Asia", Continent.y),
+         Region1.y = ifelse(y == "TWN", "Eastern Asia", Region1.y))
+
+length(which(cont_partners$Continent.x == cont_partners$Continent.y))
+length(which(cont_partners$Continent.x != cont_partners$Continent.y))
+
+length(which(cont_partners$Region1.x == cont_partners$Region1.y))
+length(which(cont_partners$Region1.x != cont_partners$Region1.y))
+```
+
+```{r}
+diff_cont<-cont_partners %>% 
+  filter(Continent.x != Continent.y)
+```
+
+# China
+
+Look into China
+
+```{r}
+test<-partners %>%  filter(x == "CHN" | y == "CHN")
+```
+
+```{r}
+test2<-trade_data %>% 
+  filter(ExportISO3 == "CHN" | ImportISO3 == "CHN")
+
+test3<-trade_data %>% 
+  filter(ExportISO3 == "CHN")
+```
+
+```{r}
+test4<-trade_data_spp %>% 
+  filter(ExportISO3 == "CHN")
+
+```
+
+# Denmark and Germany
+
+```{r}
+deu<-partners %>% 
+  filter(x == "DEU" | y == "DEU")
+
+deu<-deu %>% 
+  mutate(prop = (redun_like_tonnes/2)/(sum(deu$redun_like_tonnes)/2))
+
+dnk<-partners %>% 
+  filter(x == "DNK" | y == "DNK") 
+
+dnk<-dnk %>% 
+  mutate(prop = (redun_like_tonnes/2)/(sum(dnk$redun_like_tonnes)/2))
+```
+
+```{r}
+deu_dnk<-read.csv(here("output_data/Country_Country/DEU_DNK_like_species_trade.csv"))
+```
+
+```{r}
+deu_dnk_spp<-deu_dnk %>% 
+  group_by(CommonName, TaxonName) %>% 
+  summarise(total_tonnes = sum(Tonnage, na.rm = T))
+```
+# Species results
+
+All species traded (identified to species level)
+
+```{r}
+length(unique(trade_data_spp$TaxonName))
+```
+Total countries with species info
+
+```{r}
+exportiso3<-unique(trade_data_spp$ExportISO3)
+importiso3<-unique(trade_data_spp$ImportISO3)
+
+trade_spp_iso3<-c(exportiso3, importiso3)
+
+length(unique(trade_spp_iso3))
+```
+
+
+```{r}
+spp_dat<-read.csv(here("output_data/Country_redundant_species_results.csv"))
+
+spp_dat2<-spp_dat %>% 
+  group_by(TaxonName, CommonName) %>% 
+  summarise(total_like = sum(like_tonnes, na.rm = T),
+            total_redun = sum(redun_tonnes, na.rm = T))
+
+spp_dat2<-spp_dat2 %>% 
+  arrange(desc(total_redun))
+
+length(which(spp_dat2$total_redun>0))
+
+```
+
+```{r}
+spp_dat2 <-spp_dat2 %>% 
+  arrange(desc(total_redun)) %>% 
+  ungroup() %>% 
+  mutate(cumsum= cumsum(total_redun)/1000000,
+         prop_cumsum = cumsum/sum_redundant,
+         prop = (total_redun/1000000)/sum_redundant)
+
+length(which(spp_dat2$prop_cumsum<=0.9))
+```
+
+```{r}
+num_redun_sp<-read.csv(here("output_data/Number_of_species_traded_by_country.csv"))
+```
+
+```{r}
+options(scipen = 999)
+sub_spp<-spp_dat %>% 
+  filter(CommonName %in% c("Atlantic herring", "Skipjack tuna", "Atlantic cod", "Atlantic mackerel")) %>%
+  group_by(c1, c2, CommonName) %>% 
+  summarise(total_redun = sum(redun_tonnes, na.rm = T))
+
+
+
+ah<-sub_spp %>% 
+  filter(CommonName == "Atlantic herring") %>% 
+  mutate(prop = total_redun/2380877.34172)
+
+ac<-sub_spp %>% 
+  filter(CommonName == "Atlantic cod") %>% 
+  mutate(prop = total_redun/724473.57872)
+
+sj<-sub_spp %>% 
+  filter(CommonName == "Skipjack tuna") %>% 
+  mutate(prop = total_redun/619533.39460)
+
+am<-sub_spp %>% 
+  filter(CommonName == "Atlantic mackerel")%>% 
+  mutate(prop = total_redun/591269.95871)
+```
+
+
+# Proportion of trade identified to species for each country
+
+```{r}
+all_trade<-trade_data %>% 
+  group_by(ExportISO3, ExportCountry) %>% 
+  summarise(all_trade = sum(Tonnage, na.rm = T))
+
+all_trade_spp<-trade_data_spp %>% 
+  group_by(ExportISO3) %>% 
+  summarise(spp_trade = sum(Tonnage, na.rm = T))
+
+join_trade<-full_join(all_trade, all_trade_spp) %>% 
+  mutate(spp_trade = ifelse(is.na(spp_trade) == T, 0, spp_trade),
+    prop_spp_trade = spp_trade/all_trade)
+```
+
+```{r}
+write.csv(join_trade, here("output_data/Prop_trade_identified_to_species_by_country.csv"))
+```
+
+
+```{r}
+test<-left_join(redun, join_trade)
+
+cor.test(test$Redun_tonnes, test$prop_spp_trade)
+```
+
